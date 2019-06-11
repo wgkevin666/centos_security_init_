@@ -1,0 +1,104 @@
+---
+- name: update all packages
+  yum: 
+   name: '*'
+   state: latest
+
+- name: check if ntp service exists
+  stat:
+    path: /usr/lib/systemd/system/ntpd.service
+  register: ntpd_service_status
+
+- name: stop and mask ntpd service
+  systemd:
+    name: ntpd
+    state: stopped
+    masked: yes
+  when: ntpd_service_status.stat.exists
+
+- name: install package
+  yum:
+    name: "{{ packages }}"
+  vars:
+    packages:
+    - chrony
+    - policycoreutils-python
+
+- name: chrony | copy the chrony.conf template file
+  template:
+    src: chrony.conf
+    dest: /etc/chrony.conf 
+  notify:
+    - restart chrony
+
+- name: chrony | start and enable chrony service
+  service:
+    name: chronyd
+    state: started
+    enabled: yes
+    
+- name: pam.d | copy password-auth-ac file
+  template:
+    src: password-auth-ac
+    dest: /etc/pam.d/system-auth-ac   
+
+- name: define password max be used
+  lineinfile:
+    path: /etc/login.defs
+    regexp: '^PASS_MAX_DAYS'
+    line: 'PASS_MAX_DAYS  90'
+
+- name: connect timeout 30 min in profile
+  lineinfile:
+    path: /etc/profile
+    regexp: '^export\TMOUT'
+    line: 'export TMOUT=1800'
+
+- name: change ssh port 8022 | in sshd config
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#Port'
+    line: "Port {{ ssh_port }}"
+    insertafter: '^#Port'
+  notify:
+    - restart sshd 
+
+- name: setup selinux for altermate SSH port
+  seport:
+    ports: "{{ ssh_port }}"
+    proto: "tcp"
+    setype: "ssh_port_t"
+    state: "present"
+
+- name: add firewall SSH port
+  firewalld:
+    zone: public
+    port: "{{ ssh_port }}/tcp"
+    state: enabled
+    permanent: true
+    immediate: true
+  
+- name: change ssh config 
+  lineinfile:
+    path: /etc/ssh/sshd_config    
+    regexp: '#ClientAliveInterval'
+    line: 'ClientAliveInterval 600'
+    insertafter: '#ClientAliveInterval'
+  notify:
+    - restart sshd
+
+- name: change root cant ssh | in sshd config
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '#PermitRootLogin'
+    line: 'PermitRootLogin no'
+    insertafter: '#PermitRootLogin'
+  notify:
+    - restart sshd
+
+- name: auditd | service enable
+  service:
+    name: auditd
+    state: started
+    enabled: yes
+

@@ -1,0 +1,4 @@
+---
+ntp_server1: 0.pool.ntp.org
+ntp_server2: tock.stdtime.gov.tw
+ssh_port: 8022
